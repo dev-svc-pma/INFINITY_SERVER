@@ -1,0 +1,385 @@
+/**All Student Athletes: ADVANCE.SPORT.SPORT_CODE (where SPORT_CODE description contains ICA OR SPORT_PARTICIP_CODE IN ('I','IC'))**/
+
+IF OBJECT_ID('PMR_PowerBI.dbo.INFINITY_ATHLETICS_ATHLETE_FACT', 'U') IS NOT NULL
+drop table PMR_PowerBI.dbo.INFINITY_ATHLETICS_ATHLETE_FACT;
+
+
+WITH
+AllSportsWithICA AS (
+	SELECT DISTINCT sp.ID_NUMBER AS Athlete_ID_Number, 
+		epb.HH_ID_NUMBER,
+		sp.SPORT_CODE,
+		ts.SHORT_DESC AS ICA_Sport,
+		sp.SPORT_PARTICIP_CODE,
+		tsp.SHORT_DESC AS Sport_Participation,
+		LEFT(sp.STOP_DT,4) AS Stop_Dt_Year,
+		sp.DATE_ADDED AS Sport_Date_Added,
+		sp.DATE_MODIFIED AS Sport_Date_Modified,
+		sp.COMMENT1
+
+	FROM PMR_Test.dbo.ORACLE_SPORT sp
+		LEFT JOIN PMR_PowerBI.dbo.INFINITY_ENTITY_PROSPECT_BRIDGE epb ON sp.ID_NUMBER = epb.ID_NUMBER 
+		LEFT JOIN AIS_PROD_ORACLE..ADVANCE.TMS_SPORT ts	ON sp.SPORT_CODE = ts.SPORT_CODE
+		LEFT JOIN AIS_PROD_ORACLE..ADVANCE.TMS_SPORT_PARTICIP tsp	ON sp.SPORT_PARTICIP_CODE = tsp.SPORT_PARTICIP_CODE
+WHERE epb.RECORD_STAT_CODE IN ('A','P')
+	AND (sp.SPORT_CODE IN ('MBA','MBB','WBB','WDIV','WEQ','FHO','MFB','MGO','WGO',
+			'WGY','WLC','MSO','WSO','WSB','WSW','MTE','WTE','MTO','MTI',
+			'WTI','WTO','WVB','MWP','WWP','MCC','WCC','WSV', 
+			'WCR','WCN','MCR','MDIV','MGY','MSW','MWR') -- 'WCR','WCN','MCR','MDIV','MGY','MSW','MWR' are assumed to be "former" ICA sports as of November 2023
+	OR	sp.SPORT_PARTICIP_CODE IN ('I','IC'))
+),
+
+/** Create concatenated field of each ICA sport with gender designation that the Student/Alum 
+played at UC Davis. NOT householded so each student athlete in the household has their own summary.  **/
+
+StudentAthletes_ICA_By_Gender AS(
+SELECT * FROM
+(
+SELECT s.Athlete_ID_Number,
+		s.HH_ID_NUMBER,
+		CASE
+			WHEN s.SPORT_CODE = 'MBA' THEN 'Baseball-M'
+			WHEN s.SPORT_CODE = 'CBA' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Baseball-M'
+			WHEN s.SPORT_CODE = 'MBB' THEN 'Basketball-M'
+			WHEN s.SPORT_CODE = 'WBB' THEN 'Basketball-W'
+			WHEN s.SPORT_CODE = 'WDIV' THEN 'Diving-W'
+			WHEN s.SPORT_CODE = 'DIV' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Diving-W'
+			WHEN s.SPORT_CODE = 'WEQ' THEN 'Equestrian-W'
+			WHEN s.SPORT_CODE = 'CEQ' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Equestrian-W'
+			WHEN s.SPORT_CODE = 'FHO' THEN 'Field Hockey-W'
+			WHEN s.SPORT_CODE = 'WFH' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Field Hockey-W'
+			WHEN s.SPORT_CODE = 'MFB' THEN 'Football-M'
+			WHEN s.SPORT_CODE = 'MGO' THEN 'Golf-M'
+			WHEN s.SPORT_CODE = 'WGO' THEN 'Golf-W'
+			WHEN s.SPORT_CODE = 'WGY' THEN 'Gymnastics-W'
+			WHEN s.SPORT_CODE = 'CWG' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Gymnastics-W'
+			WHEN s.SPORT_CODE = 'WLC' THEN 'Lacrosse-W'
+			WHEN s.SPORT_CODE IN ('WLA','CWL') AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Lacrosse-W'
+			WHEN s.SPORT_CODE = 'MSO' THEN 'Soccer-M'
+			WHEN s.SPORT_CODE = 'WSO' THEN 'Soccer-W'
+			WHEN s.SPORT_CODE = 'WSB' THEN 'Softball-W'
+			WHEN s.SPORT_CODE = 'WSW' THEN 'Swimming-W'
+			WHEN s.SPORT_CODE = 'MTE' THEN 'Tennis-M'
+			WHEN s.SPORT_CODE = 'WTE' THEN 'Tennis-W'
+			WHEN s.SPORT_CODE IN ('MTO','MTI') THEN 'Track and Field-M'
+			WHEN s.SPORT_CODE IN ('WTO','WTI') THEN 'Track and Field-W'
+			WHEN s.SPORT_CODE = 'WVB' THEN 'Volleyball-W'
+			WHEN s.SPORT_CODE = 'WSV' THEN 'Beach Volleyball-W'
+			WHEN s.SPORT_CODE = 'MWP' THEN 'Water Polo-M'
+			WHEN s.SPORT_CODE = 'CMWP' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Water Polo-M'
+			WHEN s.SPORT_CODE = 'WWP' THEN 'Water Polo-W'
+			WHEN s.SPORT_CODE = 'MCC' THEN 'Cross Country-M'
+			WHEN s.SPORT_CODE = 'WCC' THEN 'Cross Country-W'
+			WHEN s.SPORT_CODE = 'CWT' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Cross Country-W'
+			WHEN s.SPORT_CODE IN ('WCR','WCN','MCR','MDIV','MGY','MSW','MWR') THEN 'Previous ICA Sport'
+			WHEN s.SPORT_CODE = 'CMG' AND s.SPORT_PARTICIP_CODE IN ('I','IC') THEN 'Previous ICA Sport'
+			ELSE 'Other Athletics' END AS GenderedSportName
+
+FROM AllSportsWithICA s
+GROUP BY Athlete_ID_Number, s.HH_ID_NUMBER, s.SPORT_CODE, s.SPORT_PARTICIP_CODE
+) AS temp
+PIVOT
+	(
+	MAX(GenderedSportName)
+	for GenderedSportName in (
+		[Baseball-M],
+		[Basketball-M],
+		[Basketball-W],
+		[Diving-W],
+		[Diving-General],
+		[Equestrian-W],
+		[Field Hockey-W],
+		[Football-M],
+		[Golf-M],
+		[Golf-W],
+		[Gymnastics-W],
+		[Gymnastics-General],
+		[Lacrosse-W],
+		[Soccer-M],
+		[Soccer-W],
+		[Softball-W],
+		[Swimming-W],
+		[Tennis-M],
+		[Tennis-W],
+		[Track and Field-M],
+		[Track and Field-W],
+		[Track and Field-General],
+		[Volleyball-W],
+		[Beach Volleyball-W],
+		[Water Polo-M],
+		[Water Polo-W],
+		[Cross Country-M],
+		[Cross Country-W],
+		[Cross Country-General],
+		[Previous ICA Sport],
+		[Other Athletics]
+		)
+) AS Athlete_Pivot
+),
+
+Athlete_Concat AS (
+Select DISTINCT h.Athlete_ID_Number,
+		h.HH_ID_NUMBER,
+		h.[Baseball-M],
+		h.[Basketball-M],
+		h.[Basketball-W],
+		h.[Beach Volleyball-W],
+		h.[Cross Country-M],
+		h.[Cross Country-W],
+		h.[Cross Country-General],
+		h.[Diving-W],
+		h.[Diving-General],
+		h.[Equestrian-W],
+		h.[Field Hockey-W],
+		h.[Football-M],
+		h.[Golf-M],
+		h.[Golf-W],
+		h.[Gymnastics-W],
+		h.[Gymnastics-General],
+		h.[Lacrosse-W],
+		h.[Soccer-M],
+		h.[Soccer-W],
+		h.[Softball-W],
+		h.[Swimming-W],
+		h.[Tennis-M],
+		h.[Tennis-W],
+		h.[Track and Field-M],
+		h.[Track and Field-W],
+		h.[Track and Field-General],
+		h.[Volleyball-W],
+		h.[Water Polo-M],
+		h.[Water Polo-W],
+		h.[Previous ICA Sport],
+		h.[Other Athletics]
+
+From StudentAthletes_ICA_By_Gender h
+),
+
+---- Concat from Pivot table with coalesce (https  ://stackoverflow.com/questions/45086384/how-to-concatenate-columns-without-null-value-in-sql)
+
+Athlete_in_These_ICA_Sports AS (
+Select g.Athlete_ID_Number,
+		g.HH_ID_NUMBER,
+    Replace(
+        Coalesce(g.[Baseball-M] + ', ','')+
+        Coalesce(g.[Basketball-M] + ', ','')+
+        Coalesce(g.[Basketball-W] + ', ','')+
+		Coalesce(g.[Beach Volleyball-W] + ', ','')+
+		Coalesce(g.[Cross Country-M] + ', ','')+
+		Coalesce(g.[Cross Country-W] + ', ','')+
+		Coalesce(g.[Cross Country-General] + ', ','')+
+		Coalesce(g.[Diving-W] + ', ','')+
+		Coalesce(g.[Diving-General] + ', ','')+
+		Coalesce(g.[Equestrian-W] + ', ','')+
+		Coalesce(g.[Field Hockey-W] + ', ','')+
+		Coalesce(g.[Football-M] + ', ','')+
+		Coalesce(g.[Golf-M] + ', ','')+
+		Coalesce(g.[Golf-W] + ', ','')+
+		Coalesce(g.[Gymnastics-W] + ', ','')+
+		Coalesce(g.[Gymnastics-General] + ', ','')+
+		Coalesce(g.[Lacrosse-W] + ', ','')+
+		Coalesce(g.[Soccer-M] + ', ','')+
+		Coalesce(g.[Soccer-W] + ', ','')+
+		Coalesce(g.[Softball-W] + ', ','')+
+		Coalesce(g.[Swimming-W] + ', ','')+
+		Coalesce(g.[Tennis-M] + ', ','')+
+		Coalesce(g.[Tennis-W] + ', ','')+
+		Coalesce(g.[Track and Field-M] + ', ','')+
+		Coalesce(g.[Track and Field-W] + ', ','')+
+		Coalesce(g.[Track and Field-General] + ', ','')+
+		Coalesce(g.[Volleyball-W] + ', ','')+
+		Coalesce(g.[Water Polo-M] + ', ','')+
+		Coalesce(g.[Water Polo-W] + ', ','')+
+		Coalesce(g.[Previous ICA Sport] + ', ','')+
+        Coalesce(g.[Other Athletics] + ', ','')
+     +', ',', ,','') --Hack to remove the Last Comma
+ as Athlete_in_These_ICA_Sports 
+ from Athlete_Concat g
+ --Order By g.Athlete_ID_Number
+ ),
+ 
+/** End of create concatenated field section for Student Athlete Alums  **/
+
+/** Create table of individuals with Codes showing they played ICA sports as students by GeneralSportName **/
+StudentAthletes_ICA AS(
+SELECT s.Athlete_ID_Number,
+		s.HH_ID_NUMBER,
+		'Athlete' AS [Pool_Segment],
+
+		CASE
+			WHEN s.SPORT_CODE = 'MBA' THEN 'Baseball'
+			WHEN s.SPORT_CODE IN ('MBB','WBB') THEN 'Basketball'
+			WHEN s.SPORT_CODE = 'WDIV' THEN 'Diving'
+			WHEN s.SPORT_CODE = 'WEQ' THEN 'Equestrian'
+			WHEN s.SPORT_CODE = 'WFH' THEN 'Field Hockey'
+			WHEN s.SPORT_CODE = 'MFB' THEN 'Football'
+			WHEN s.SPORT_CODE IN ('MGO','WGO') THEN 'Golf'
+			WHEN s.SPORT_CODE = 'WGY' THEN 'Gymnastics'
+			WHEN s.SPORT_CODE = 'WLC' THEN 'Lacrosse'
+			WHEN s.SPORT_CODE IN ('MSO','WSO') THEN 'Soccer'
+			WHEN s.SPORT_CODE = 'WSB' THEN 'Softball'
+			WHEN s.SPORT_CODE = 'WSW' THEN 'Swimming'
+			WHEN s.SPORT_CODE IN ('MTE', 'WTE') THEN 'Tennis'
+			WHEN s.SPORT_CODE IN ('MTO','MTI','WTO','WTI') THEN 'Track and Field'
+			WHEN s.SPORT_CODE = 'WVB' THEN 'Volleyball'
+			WHEN s.SPORT_CODE = 'WBVB' THEN 'Beach Volleyball'
+			WHEN s.SPORT_CODE IN ('MWP','WWP') THEN 'Water Polo'
+			WHEN s.SPORT_CODE IN ('MCC','WCC') THEN 'Cross Country'
+			WHEN s.SPORT_CODE IN ('WCR','WCN','MCR','MDIV','MGY','MSW','MWR') THEN 'Previous ICA Sport'
+			ELSE 'Other Athletics' END AS GeneralSportName
+
+FROM AllSportsWithICA s
+GROUP BY s.HH_ID_NUMBER, s.SPORT_CODE, s.Athlete_ID_Number
+),
+
+------Pivot table of general sports names complete by household and 1/0 indicators------
+
+Support_For_ICA_Sports_HH AS(
+SELECT * FROM 
+(
+SELECT --s.ID_Number,
+		s.HH_ID_NUMBER,
+		CASE
+			WHEN s.GeneralSportName = 'Assigned to Ath' THEN 'Assigned_to_Ath'
+			WHEN s.GeneralSportName = 'Baseball' THEN 'Baseball'
+			WHEN s.GeneralSportName = 'Basketball' THEN 'Basketball'
+			WHEN s.GeneralSportName = 'Diving' THEN 'Diving'
+			WHEN s.GeneralSportName = 'Equestrian' THEN 'Equestrian'
+			WHEN s.GeneralSportName = 'Field Hockey' THEN 'Field_Hockey'
+			WHEN s.GeneralSportName = 'Football' THEN 'Football'
+			WHEN s.GeneralSportName = 'GOLF' THEN 'Golf'
+			WHEN s.GeneralSportName = 'Gymnastics' THEN 'Gymnastics'
+			WHEN s.GeneralSportName = 'Lacrosse' THEN 'Lacrosse'
+			WHEN s.GeneralSportName = 'Soccer' THEN 'Soccer'
+			WHEN s.GeneralSportName = 'Softball' THEN 'Softball'
+			WHEN s.GeneralSportName = 'Swimming' THEN 'Swimming'
+			WHEN s.GeneralSportName = 'Tennis' THEN 'Tennis'
+			WHEN s.GeneralSportName = 'Track and Field' THEN 'Track'
+			WHEN s.GeneralSportName = 'Volleyball' THEN 'Volleyball'
+			WHEN s.GeneralSportName = 'Beach Volleyball' THEN 'Beach_Volleyball'
+			WHEN s.GeneralSportName = 'Water Polo' THEN 'Water_Polo'
+			WHEN s.GeneralSportName = 'Cross Country' THEN 'Cross_Country'
+			WHEN s.GeneralSportName = 'Previous ICA Sport' THEN 'Previous_ICA_Sport'
+			ELSE 'Other_Athletics' END AS HH_Played_These_ICA_Sports
+
+
+
+FROM StudentAthletes_ICA s
+GROUP BY s.HH_ID_NUMBER, s.GeneralSportName--, s.ID_Number
+) AS temp
+PIVOT
+	(
+	MAX(HH_Played_These_ICA_Sports)
+	for HH_Played_These_ICA_Sports in (
+		--[Assigned to Ath],
+		[Baseball],
+		[Basketball],
+		[Diving],
+		[Equestrian],
+		[Field_Hockey],
+		[Football],
+		[Golf],
+		[Gymnastics],
+		[Lacrosse],
+		[Soccer],
+		[Softball],
+		[Swimming],
+		[Tennis],
+		[Track],
+		[Volleyball],
+		[Beach_Volleyball],
+		[Water_Polo],
+		[Cross_Country],
+		[Previous_ICA_Sport],
+		[Other_Athletics]
+		)
+) AS Ath_ICA_Pivot
+),
+
+
+Involvment_and_Support_For_ICA_Sports_HH AS (
+SELECT DISTINCT
+		s.HH_ID_NUMBER,
+		--CASE WHEN s.[Assigned to Ath] = 'Assigned to Ath' THEN 1
+  --            ELSE 0 END As [Assigned to Ath],
+		CASE WHEN s.[Baseball] = 'Baseball' THEN 1
+              ELSE 0 END As [Baseball_Athlete],
+		CASE WHEN s.[Basketball] = 'Basketball' THEN 1
+              ELSE 0 END As [Basketball_Athlete],
+		CASE WHEN s.[Diving] = 'Diving' THEN 1
+              ELSE 0 END As [Diving_Athlete],
+		CASE WHEN s.[Equestrian] = 'Equestrian' THEN 1
+              ELSE 0 END As [Equestrian_Athlete],
+		CASE WHEN s.[Field_Hockey] = 'Field_Hockey' THEN 1
+              ELSE 0 END As [Field_Hockey_Athlete],
+		CASE WHEN s.[Football] = 'Football' THEN 1
+              ELSE 0 END As [Football_Athlete],
+		CASE WHEN s.[Golf] = 'Golf' THEN 1
+              ELSE 0 END As [Golf_Athlete],
+		CASE WHEN s.[Gymnastics] = 'Gymnastics' THEN 1
+              ELSE 0 END As [Gymnastics_Athlete],
+		CASE WHEN s.[Lacrosse] = 'Lacrosse' THEN 1
+              ELSE 0 END As [Lacrosse_Athlete],
+		CASE WHEN s.[Soccer] = 'Soccer' THEN 1
+              ELSE 0 END As [Soccer_Athlete],
+		CASE WHEN s.[Softball] = 'Softball' THEN 1
+              ELSE 0 END As [Softball_Athlete],
+		CASE WHEN s.[Swimming] = 'Swimming' THEN 1
+              ELSE 0 END As [Swimming_Athlete],
+		CASE WHEN s.[Tennis] = 'Tennis' THEN 1
+              ELSE 0 END As [Tennis_Athlete],
+		CASE WHEN s.[Track] = 'Track' THEN 1
+              ELSE 0 END As [Track_Athlete],
+		CASE WHEN s.[Volleyball] = 'Volleyball' THEN 1
+              ELSE 0 END As [Volleyball_Athlete],
+		CASE WHEN s.[Beach_Volleyball] = 'Beach_Volleyball' THEN 1
+              ELSE 0 END As [Beach_Volleyball_Athlete],
+		CASE WHEN s.[Water_Polo] = 'Water_Polo' THEN 1
+              ELSE 0 END As [Water_Polo_Athlete],
+		CASE WHEN s.[Cross_Country] = 'Cross_Country' THEN 1
+              ELSE 0 END As [Cross_Country_Athlete],
+		CASE WHEN s.[Previous_ICA_Sport] = 'Previous_ICA_Sport' THEN 1
+              ELSE 0 END As [Previous_ICA_Sport_Athlete],
+		CASE WHEN s.[Other_Athletics] = 'Other_Athletics' THEN 1
+              ELSE 0 END As [Other_Athletics_Athlete],
+		GETDATE() AS Last_Updated
+
+FROM Support_For_ICA_Sports_HH s
+)
+
+Select DISTINCT ica.ATHLETE_ID_NUMBER,
+		ica.HH_ID_NUMBER,
+		epb.ENTITY_NAME_LF,
+		athlete.Athlete_in_These_ICA_Sports,
+		sp_athlete.Athlete_in_These_ICA_Sports AS Spouse_is_Athlete_in_These_ICA_Sports,
+		h.Baseball_Athlete,
+		h.Basketball_Athlete,
+		h.Beach_Volleyball_Athlete,
+		h.Cross_Country_Athlete,
+		h.Diving_Athlete,
+		h.Equestrian_Athlete,
+		h.Field_Hockey_Athlete,
+		h.Football_Athlete,
+		h.Golf_Athlete,
+		h.Gymnastics_Athlete,
+		h.Lacrosse_Athlete,
+		h.Soccer_Athlete,
+		h.Softball_Athlete,
+		h.Swimming_Athlete,
+		h.Tennis_Athlete,
+		h.Track_Athlete,
+		h.Volleyball_Athlete,
+		h.Water_Polo_Athlete,
+		h.Previous_ICA_Sport_Athlete,
+		h.Other_Athletics_Athlete,
+		GETDATE() AS Last_Updated
+
+INTO PMR_PowerBI.dbo.INFINITY_ATHLETICS_ATHLETE_FACT
+
+From AllSportsWithICA ICA
+LEFT JOIN PMR_PowerBI.dbo.INFINITY_ENTITY_PROSPECT_BRIDGE epb ON ica.ATHLETE_ID_NUMBER = epb.ID_NUMBER
+LEFT JOIN Athlete_in_These_ICA_Sports athlete ON ica.ATHLETE_ID_NUMBER = athlete.Athlete_ID_Number
+LEFT JOIN Athlete_in_These_ICA_Sports sp_athlete ON epb.SPOUSE_ID_NUMBER = sp_athlete.Athlete_ID_Number
+LEFT JOIN Involvment_and_Support_For_ICA_Sports_HH h ON ica.HH_ID_NUMBER = h.HH_ID_NUMBER
+
+;
