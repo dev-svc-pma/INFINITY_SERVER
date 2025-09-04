@@ -1,0 +1,46 @@
+--DRAFT of server table for ID bridging for joining
+--First draft by Carrick on 12/10/24
+--Second draft created UNIQUE_SYSTEM_ID to make each row unique 5/1/25 Carrick
+
+IF OBJECT_ID('PMR_PowerBI.dbo.INFINITY_ENTITY_PROSPECT_BRIDGE', 'U') is not null
+Drop	Table	PMR_PowerBI.dbo.INFINITY_ENTITY_PROSPECT_BRIDGE;
+
+SELECT 
+   CONCAT(pe.PROSPECT_ID, '|', bio.REL_MGR_ID_NUMBER, '|', bio.ID_NUMBER) as UNIQUE_SYSTEM_ID  --create a unique key
+, case 
+     when bio.PERS_ORG_IND='O' then 'Organization'
+     when pe.prospect_ID is not null and pe.PRIMARY_IND='Y' then 'Primary_Prospect'
+	 when pe.PROSPect_ID is not null and pe.PRIMARY_IND='N' then 'Affiliated_Prospect'
+	 when pe.PROSPect_ID is null AND bio.ID_NUMBER = HH_ID_NUMBER then 'Primary_Entity'
+	 when pe.PROSPect_ID is null AND bio.ID_NUMBER <> bio.SPOUSE_ID_NUMBER then 'Affiliated_HH_Entity'
+	 else 'REVIEW'
+	     end as ENTITY_TYPE
+, case
+	when pe.PROSPECT_ID IS NOT NULL AND pe.PRIMARY_IND='Y' then bio.ID_NUMBER
+
+	end as PRIMARY_ENTITY_ID
+, bio.ID_NUMBER
+
+, case 
+	when bio.PERS_ORG_IND='P' then bio.LAST_NAME + ', ' + bio.FIRST_NAME
+	when bio.PERS_ORG_IND='O' then (bio.SORT_NAME)
+	end  as ENTITY_NAME_LF
+, bio.SORT_NAME
+, bio.SPOUSE_ID_NUMBER
+, bio.HH_ID_NUMBER
+, bio.PERS_ORG_IND
+, bio.RECORD_STAT_CODE
+, pe.PROSPECT_ID
+, pe.PRIMARY_IND as PROSP_PRIM_IND
+, prosp.ACTIVE_IND as PROSP_ACTIVE_IND
+, getdate() as DATE_TABLE_REFRESH
+
+---------
+into PMR_PowerBI.dbo.INFINITY_ENTITY_PROSPECT_BRIDGE
+---------
+
+FROM PMR_Test.dbo.ORACLE_UCDR_BIO bio 
+LEFT JOIN PMR_Test.dbo.ORACLE_PROSPECT_ENTITY pe on bio.ID_NUMBER=pe.ID_NUMBER
+LEFT JOIN PMR_Test.dbo.ORACLE_PROSPECT prosp on prosp.PROSPECT_ID=pe.PROSPECT_ID
+
+order by pe.prospect_ID, bio.REL_MGR_ID_NUMBER, bio.ID_NUMBER
